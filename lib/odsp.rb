@@ -3,19 +3,19 @@ class ODSP
 
     def initialize(
             save_config: {
-                make: { folder: 'make', op_file: 'make_all.sql'},
-                drop: { folder: 'drop', op_file: 'drop_all.sql'}
+                make: {folder: 'make', op_file: 'make_all.sql'},
+                drop: {folder: 'drop', op_file: 'drop_all.sql'}
             },
-            connections: { dest: nil, src: nil},
+            connections: {dest: nil, src: nil},
             params:      nil,
-            debug_opt:   { time: true, console: true, commit: false, comment: true }
+            debug_opt:   {time: true, console: true, commit: false, comment: true}
         )
         raise "Connections can not be defined as nil!" if connections.any? { |c| !c }
         @connections = connections
 
         @save_config = save_config
         @params = params || default_params
-        @params.all? { |hsh| check_param_hsh(hsh) }
+        @params.each { |hsh| check_param_hsh(hsh) }
         @debug_opt = debug_opt
     end
 
@@ -42,7 +42,6 @@ class ODSP
         raise 'Query can not be nil!' unless hsh[:query]
         raise 'Lambda operation can not be nil!' unless hsh[:lambda]
         raise 'Connection type can not be nil!' unless @connections[hsh[:connection]]
-        true
     end
 
     def process_hsh(hsh)
@@ -72,28 +71,28 @@ class ODSP
                 type:       'index',
                 connection: :dest,
                 op_type:    :drop,
-                lambda:     lambda { |arr| "DROP INDEX #{@connections[:dest].username}.#{arr[0]};\n" },
+                lambda:     -> arr { "DROP INDEX #{@connections[:dest].username}.#{arr[0]};\n" },
                 query:      "SELECT object_name FROM user_objects WHERE status = 'VALID' AND object_type = 'INDEX' ORDER BY CREATED, TIMESTAMP\n"
             },
             {
                 type:       'table',
                 connection: :dest,
                 op_type:    :drop,
-                lambda:     lambda { |arr| "DROP TABLE #{@connections[:dest].username}.#{arr[0]};\n" },
+                lambda:     -> arr { "DROP TABLE #{@connections[:dest].username}.#{arr[0]};\n" },
                 query:      "SELECT object_name FROM user_objects WHERE status = 'VALID' AND object_type = 'TABLE' ORDER BY CREATED, TIMESTAMP\n"
             },
             {
                 type:       'sequence',
                 connection: :dest,
                 op_type:    :drop,
-                lambda:     lambda { |arr| "DROP SEQUENCE #{@connections[:dest].username}.#{arr[0]};\n" },
+                lambda:     -> arr { "DROP SEQUENCE #{@connections[:dest].username}.#{arr[0]};\n" },
                 query:      "SELECT object_name FROM user_objects WHERE status = 'VALID' AND object_type = 'SEQUENCE' ORDER BY CREATED, TIMESTAMP\n"
             },
             {
                 type:       'create_table',
                 connection: :src,
                 op_type:    :make,
-                lambda:     lambda { |arr|  "-- original index create time: #{arr[0]}, last ddl time: #{arr[1]}\n" +
+                lambda:     -> arr {  "-- original index create time: #{arr[0]}, last ddl time: #{arr[1]}\n" +
                                             arr[2].read.strip.gsub("\"#{@connections[:src].username}\"", "\"#{@connections[:dest].username}\"") .gsub(/\n  TABLESPACE \"[^"]*\"/,'') + ";\n\n"  },
                 query:      "SELECT CREATED, LAST_DDL_TIME, DBMS_METADATA.GET_DDL(object_type, object_name, '#{@connections[:src].username}') val FROM user_objects WHERE status = 'VALID' AND object_type = 'TABLE' ORDER BY CREATED, TIMESTAMP\n"
             },
@@ -101,14 +100,14 @@ class ODSP
                 type:       'insert',
                 connection: :src,
                 op_type:    :make,
-                lambda:     lambda { |arr| "INSERT INTO #{@connections[:dest].username}.#{arr[0]} \nSELECT * FROM #{@connections[:src].username}.#{arr[0]};\n\n" },
+                lambda:     -> arr { "INSERT INTO #{@connections[:dest].username}.#{arr[0]} \nSELECT * FROM #{@connections[:src].username}.#{arr[0]};\n\n" },
                 query:      "SELECT object_name val FROM user_objects WHERE status = 'VALID' AND object_type = 'TABLE' ORDER BY CREATED, TIMESTAMP\n"
             },
             {
                 type:       'sequence',
                 connection: :src,
                 op_type:    :make,
-                lambda:     lambda { |arr|  "-- original index create time: #{arr[0]}, last ddl time: #{arr[1]}\n" +
+                lambda:     -> arr {  "-- original index create time: #{arr[0]}, last ddl time: #{arr[1]}\n" +
                                             arr[2].read.strip.gsub("\"#{@connections[:src].username}\"", "\"#{@connections[:dest].username}\"") + ";\n"  },
                 query:      "SELECT CREATED, LAST_DDL_TIME, DBMS_METADATA.GET_DDL(object_type, object_name, '#{@connections[:src].username}') val FROM user_objects WHERE status = 'VALID' AND object_type = 'SEQUENCE' ORDER BY CREATED, TIMESTAMP\n"
             },
@@ -116,7 +115,7 @@ class ODSP
                 type:       'index',
                 connection: :src,
                 op_type:    :make,
-                lambda:     lambda { |arr|  "-- original index create time: #{arr[0]}, last ddl time: #{arr[1]}\n" +
+                lambda:     -> arr {  "-- original index create time: #{arr[0]}, last ddl time: #{arr[1]}\n" +
                                             arr[2].read.strip.gsub("\"#{@connections[:src].username}\"", "\"#{@connections[:dest].username}\"").gsub(/\n  TABLESPACE \"[^"]*\"/,'') + ";\n\n"},
                 query:      "SELECT CREATED, LAST_DDL_TIME, DBMS_METADATA.GET_DDL(object_type, object_name, '#{@connections[:src].username}') val FROM user_objects WHERE status = 'VALID' AND object_type = 'INDEX' ORDER BY CREATED, TIMESTAMP\n"
             }
